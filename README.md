@@ -2,8 +2,8 @@
 
 #####Author : Klima Lau
 #####Email  : klimalau@gmail.com
-#####Website: www.liuliqiang.com(Chinese Website)
-#####Website: www.stupy.info(English Website)
+#####Website: www.liuliqiang.com  (Chinese Website)
+#####Website: www.stupy.info  (English Website)
 
 
 ## English Introdution####
@@ -35,6 +35,7 @@ This is a 2048 game code in MFC, created in Visual Studio 2005. Mfc2048 code in 
 - 没有开始按钮，你只能通过点击鼠标左键开始
 - 没有重新开始功能，游戏完了之后你只能通过重启继续游戏
 - 很明显，这个游戏没有分数统计
+
 ###在未来版本中将会加入更多的功能，例如：
 - 使用笔记本电脑的触摸板进行游戏
 - 加入lua脚本语言的支持进行控制移动
