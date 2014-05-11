@@ -51,6 +51,8 @@ public:
 public:
 	BOOL PreTranslateMessage(MSG* pMsg);
 public:
+	void StartGame();
+	void Restart();
 	BOOL createNextBlock(void);
 public:
 	BOOL hasFreeBlock(void);
@@ -58,4 +60,20 @@ public:
 	BOOL isMoveable(void);
 public:
 	BOOL m_isTryMove;
+public:
+	afx_msg LRESULT OnHotKey(WPARAM wParam , LPARAM lParam);
+public:
+	BOOL m_isTouchBoardOk;
+public:
+	afx_msg void OnDestroy();
+public:
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+public:
+	CPoint m_prePos;
+public:
+	int m_mouseX;
+public:
+	int m_mouseY;
+public:
+	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 };

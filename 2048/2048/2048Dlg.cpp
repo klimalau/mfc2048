@@ -8,11 +8,20 @@ using namespace std;
 #include "2048.h"
 #include "2048Dlg.h"
 
+extern "C"
+{
+#include "lua.h"
+#include "lualib.h"
+#include "lauxlib.h"
+}
+#pragma comment(lib, "lua51.lib")
+lua_State *lua;
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
-
+CMy2048Dlg* thisWindows;
 // CMy2048Dlg 对话框
 
 
@@ -22,6 +31,10 @@ CMy2048Dlg::CMy2048Dlg(CWnd* pParent /*=NULL*/)
 , m_ptBegin(0)
 , m_bDraw(FALSE)
 , m_isTryMove(FALSE)
+, m_isTouchBoardOk(FALSE)
+, m_prePos(0)
+, m_mouseX(0)
+, m_mouseY(0)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_ptBegin = CPoint(0, 0);
@@ -52,6 +65,10 @@ BEGIN_MESSAGE_MAP(CMy2048Dlg, CDialog)
 	//}}AFX_MSG_MAP
 	ON_WM_LBUTTONDOWN()
 	ON_WM_KEYDOWN()
+	ON_MESSAGE(WM_HOTKEY,&CMy2048Dlg::OnHotKey)
+	ON_WM_DESTROY()
+	ON_WM_MOUSEMOVE()
+	ON_WM_RBUTTONDOWN()
 END_MESSAGE_MAP()
 
 
@@ -61,12 +78,14 @@ BOOL CMy2048Dlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
 
+	thisWindows = this;
 	// 设置此对话框的图标。当应用程序主窗口不是对话框时，框架将自动
 	//  执行此操作
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
+	RegisterHotKey(GetSafeHwnd(), 1001, MOD_ALT, 'Q');//Alt+1键
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -98,6 +117,8 @@ void CMy2048Dlg::OnPaint()
 	{
 		CDialog::OnPaint();
 	}
+
+	OnLButtonDown(NULL, NULL);
 }
 
 //当用户拖动最小化窗口时系统调用此函数取得光标显示。
@@ -151,6 +172,19 @@ void getColorWithCount(int count, COLORREF &color)
 	return ;
 }
 
+void CMy2048Dlg::Restart()
+{
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			m_pane[i][j] = 0;
+		}
+	}
+	m_pane[rand() % 4][rand() % 4] = 2;
+	m_pane[rand() % 4][rand() % 4] = 2;
+	StartGame();
+}
 /*
 CPoint positions[4][4] = {CPoint(15, 15), CPoint(), CPoint(), CPoint(), 
 						CPoint(), CPoint(), CPoint(), CPoint(),
@@ -159,20 +193,26 @@ CPoint positions[4][4] = {CPoint(15, 15), CPoint(), CPoint(), CPoint(),
 */
 void CMy2048Dlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
-	int lwidth = 108;	//小方块的边长
-	int lradix = 5;		//小方块的圆角
+	StartGame();
+}
+
+void CMy2048Dlg::StartGame()
+{
+	int lwidth = 108;	//小方块的边长	//the width of the little rectangle
+	int lradix = 5;		//小方块的圆角	//the round of the little rectangle
 	LONG left = 5;
 	LONG top = 5;
 	LONG width = 500;
 	LONG height = 500;
 	LONG radix = 10;
 
-	int fontWidth = 37;
-	int fontHeight = 37;
+	int fontWidth = 100;
+	int fontHeight = 100;
 	int fontWeight = FW_SEMIBOLD;
-	CString fontName = "华文行楷";
+	CString fontName = "Courier New";	
 
 	int dis = 123;
+	int stateHigh = 120;	//状态栏高度  the length of the state bar
 	CRgn roundRect; 
 	CFont font;
 	CRect thisRect;
@@ -181,10 +221,11 @@ void CMy2048Dlg::OnLButtonDown(UINT nFlags, CPoint point)
 	brush.CreateSolidBrush(RGB(187, 173, 160));
 	CClientDC dc(this); 
 	// 设置TextOut文本背景色模式为透明
+	//set the background of the text to transparent 
 	SetBkMode(dc, TRANSPARENT);
 
 	this->GetWindowRect(&thisRect);
-	this->SetWindowPos(NULL, thisRect.left, thisRect.top, width + left * 2, height + top * 7, SWP_NOMOVE);
+	this->SetWindowPos(NULL, thisRect.left, thisRect.top - stateHigh, width + left * 2, height + top * 7 + stateHigh, SWP_NOMOVE);
 	roundRect.CreateRoundRectRgn(left, top, width, height, radix, radix);
 	dc.FillRgn(&roundRect, &brush);
 
@@ -211,6 +252,7 @@ void CMy2048Dlg::OnLButtonDown(UINT nFlags, CPoint point)
 			roundRect.CreateRoundRectRgn(x - lradix, y - lradix, x + lwidth - lradix * 2, y + lwidth - lradix * 2, lradix, lradix);
 			dc.FillRgn(&roundRect, &brush);
 			//获取文字的高度和宽度
+			//get the high and width of the words
 			if (m_pane[i][j] != 0)
 			{
 				str.Format("%d", m_pane[i][j]);
@@ -220,7 +262,7 @@ void CMy2048Dlg::OnLButtonDown(UINT nFlags, CPoint point)
 				while (nTextWei > lwidth * 0.75)
 				{
 					font.DeleteObject();
-					font.CreateFont(fontHeight, fontWidth / divNum, 0, 0, fontWeight, 0, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
+					font.CreateFont(fontHeight, (int)(fontWidth / divNum), 0, 0, fontWeight, 0, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
 						CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, fontName);
 					dc.SelectObject(font);
 					nTextWei = dc.GetTextExtent(str).cx;
@@ -247,6 +289,7 @@ bool CMy2048Dlg::moveLeft(void)
 	for (int i = 0; i < 4; i++)
 	{
 		//如果（1，2）（3，4）可以合并
+		// if (1, 2), (3, 4) both is equal
 		if (m_pane[i][0] != 0 && m_pane[i][2] != 0 
 			&& m_pane[i][0] == m_pane[i][1] 
 		&& m_pane[i][2] == m_pane[i][3])
@@ -257,7 +300,7 @@ bool CMy2048Dlg::moveLeft(void)
 			m_pane[i][2] = 0;
 			m_pane[i][3] = 0;
 		}
-		else if (m_pane[i][0] != 0 && m_pane[i][0] == m_pane[i][1])//(1, 2)可以合并
+		else if (m_pane[i][0] != 0 && m_pane[i][0] == m_pane[i][1])//(1, 2)可以合并	//(1, 2) is equal
 		{
 			succeed = true;
 			m_pane[i][0] = m_pane[i][0] * 2;
@@ -265,13 +308,13 @@ bool CMy2048Dlg::moveLeft(void)
 			m_pane[i][2] = m_pane[i][3];
 			m_pane[i][3] = 0;
 		}
-		else if (m_pane[i][1] != 0 && m_pane[i][2] == m_pane[i][1])	//(2, 3)可以合并
+		else if (m_pane[i][1] != 0 && m_pane[i][2] == m_pane[i][1])	//(2, 3)可以合并	//(2, 3) is equal
 		{
 			succeed = true;
 			m_pane[i][1] = m_pane[i][1] * 2;
 			m_pane[i][2] = m_pane[i][3];
 			m_pane[i][3] = 0;
-			if (m_pane[i][0] == 0)	//如果第一位是0
+			if (m_pane[i][0] == 0)	//如果第一位是0	//if first bit is 0
 			{
 				for(int j = 0; j < 3; j++)
 				{
@@ -279,7 +322,7 @@ bool CMy2048Dlg::moveLeft(void)
 				}
 			}
 		}
-		else if (m_pane[i][2] != 0 && m_pane[i][3] == m_pane[i][2])	//(3, 4)可以合并
+		else if (m_pane[i][2] != 0 && m_pane[i][3] == m_pane[i][2])	//(3, 4)可以合并	//(3, 4)is equal
 		{
 			succeed = true;
 			m_pane[i][2] = m_pane[i][2] * 2;
@@ -299,7 +342,7 @@ bool CMy2048Dlg::moveLeft(void)
 				}
 			}
 		}
-		else if (m_pane[i][0] != 0 && m_pane[i][1] == 0 && m_pane[i][0] == m_pane[i][2])//(1, 3)可以合并
+		else if (m_pane[i][0] != 0 && m_pane[i][1] == 0 && m_pane[i][0] == m_pane[i][2])//(1, 3)可以合并	//(1, 3) is equal
 		{
 			succeed = true;
 			m_pane[i][0] *= 2;
@@ -307,13 +350,13 @@ bool CMy2048Dlg::moveLeft(void)
 			m_pane[i][2] = 0;
 			m_pane[i][3] = 0;
 		}
-		else if (m_pane[i][1] != 0 && m_pane[i][2] == 0 && m_pane[i][1] == m_pane[i][3])//(2, 4)可以合并
+		else if (m_pane[i][1] != 0 && m_pane[i][2] == 0 && m_pane[i][1] == m_pane[i][3])//(2, 4)可以合并	//(2, 4) is equal
 		{
 			succeed = true;
 			m_pane[i][1] *= 2;
 			m_pane[i][2] = 0;
 			m_pane[i][3] = 0;
-			if (m_pane[i][0] == 0)	//如果第一位是0
+			if (m_pane[i][0] == 0)	//如果第一位是0	//if the first bit is 0
 			{
 				for(int j = 0; j < 3; j++)
 				{
@@ -321,7 +364,7 @@ bool CMy2048Dlg::moveLeft(void)
 				}
 			}
 		}
-		else if (m_pane[i][0] != 0 && m_pane[i][1] == 0 && m_pane[i][2] == 0 && m_pane[i][3] == m_pane[i][0])//	(1, 4)可以合并
+		else if (m_pane[i][0] != 0 && m_pane[i][1] == 0 && m_pane[i][2] == 0 && m_pane[i][3] == m_pane[i][0])//	(1, 4)可以合并	//(1, 4) is equal
 		{
 			succeed = true;
 			m_pane[i][0] *= 2;
@@ -513,4 +556,182 @@ BOOL CMy2048Dlg::isMoveable(void)
 		memcpy(m_pane, bm_pane, sizeof(bm_pane));
 	}
 	return result;
+}
+
+afx_msg LRESULT CMy2048Dlg::OnHotKey(WPARAM wParam , LPARAM lParam)
+{
+	if(wParam ==1001) 
+	{  
+		m_isTouchBoardOk = !m_isTouchBoardOk;
+
+		if (m_isTouchBoardOk)	//如果使用触摸板
+								//if user use touchpad
+		{
+			//锁定鼠标位置在窗口内
+			//lock the mouse in windows
+			RECT rect;
+			this->GetWindowRect(&rect);
+			m_mouseX = (rect.left + rect.right) / 2;
+			m_mouseY = (rect.top + rect.bottom) / 2;
+			ClipCursor(&rect);
+			ShowCursor(FALSE);
+			SetCursorPos(m_mouseX, m_mouseY);
+		}
+		else	//解锁鼠标		unlock the mouse
+		{
+			ShowCursor(TRUE);
+			ClipCursor(NULL);
+		}
+	}
+	return 0; 
+}
+
+void CMy2048Dlg::OnDestroy()
+{
+	UnregisterHotKey(GetSafeHwnd(),1001);//注销热键	unregister hotkeys
+	CDialog::OnDestroy();
+}
+
+void CMy2048Dlg::OnMouseMove(UINT nFlags, CPoint point)
+{
+	CPoint mPoint;
+	GetCursorPos(&mPoint);
+	if (m_isTouchBoardOk && (mPoint.x != m_mouseX && mPoint.y != m_mouseY))
+	{
+		int dx = mPoint.x - m_mouseX;
+		int dy = mPoint.y - m_mouseY;
+		int dire = abs(dx) > abs(dy) ? 0: 1;	//0表示水平移动，1表示竖直移动
+												//0 is Horizontal movement 
+												//1 is Vertical movement
+		
+		if (dire == 0) //Horizontal movement 
+		{
+			if (dx > 20)
+			{
+				moveRight();
+				SetCursorPos(m_mouseX, m_mouseY);
+				OnLButtonDown(0, NULL);
+			}
+			else if (dx < -20)
+			{
+				moveLeft();
+				SetCursorPos(m_mouseX, m_mouseY);
+				OnLButtonDown(0, NULL);
+			}
+		}
+		else	//Vertical movement
+		{
+			if (dy > 20)
+			{
+				moveDown();
+				SetCursorPos(m_mouseX, m_mouseY);
+				OnLButtonDown(0, NULL);
+			}
+			else if (dy < -20)
+			{
+				moveUp();
+				SetCursorPos(m_mouseX, m_mouseY);
+				OnLButtonDown(0, NULL);
+			}
+		}
+	}
+}
+
+
+int luaMoveLeftFunc(lua_State *L)
+{
+	thisWindows->PostMessage(WM_KEYDOWN, (WPARAM)(VK_LEFT), 0);
+	return 1;
+}
+
+int luaMoveRightFunc(lua_State *L)
+{
+	thisWindows->PostMessage(WM_KEYDOWN, (WPARAM)(VK_RIGHT), 0);
+	return 1;
+}
+
+int luaMoveUpFunc(lua_State *L)
+{
+	thisWindows->PostMessage(WM_KEYDOWN, (WPARAM)(VK_UP), 0);
+	return 1;
+}
+
+int luaMoveDownFunc(lua_State *L)
+{
+	thisWindows->PostMessage(WM_KEYDOWN, (WPARAM)(VK_DOWN), 0);
+	return 1;
+}
+
+int getPaneState(lua_State *L)
+{
+	lua_newtable(L);
+
+	for (int i = 1; i <= 16; i++)
+	{
+		lua_pushnumber(L, i);
+		lua_pushnumber(L, thisWindows->m_pane[(i - 1) / 4][(i - 1) % 4]);
+		lua_settable(L, -3);
+	}
+
+	return 1;
+}
+
+int Msg(lua_State* L)
+{
+	const char *s1 = luaL_checkstring(L, 1); // 测试第一个参数是否为字串形式，并取得这个字串
+	MessageBox(NULL, s1, "caption", MB_OK);
+	lua_pop(lua, 1); // 清除栈里的这个字串
+	lua_pushlstring(L, "MsgOK!", 6); // 把返回值压进栈里
+	// 这个返回是指返回值的个数
+	return 1;
+}
+
+int moveAble(lua_State *L)
+{
+	if (thisWindows->isMoveable())
+	{
+		lua_pushboolean(L, TRUE);
+	}
+	else
+	{
+		lua_pushboolean(L, FALSE);
+	}
+	return 1;
+}
+void CMy2048Dlg::OnRButtonDown(UINT nFlags, CPoint point)
+{
+	thisWindows = this;
+	lua = lua_open ();
+	if(lua)
+	{
+		luaopen_base (lua);
+		luaopen_table (lua);
+		luaopen_string (lua);
+		luaopen_math (lua);
+		luaopen_debug (lua);
+	}
+
+	lua_pushcfunction(lua, Msg);
+	lua_setglobal(lua, "Msg");
+
+	lua_pushcfunction(lua, luaMoveLeftFunc);
+	lua_setglobal(lua, "luaMoveLeftFunc");
+
+	lua_pushcfunction(lua, luaMoveRightFunc);
+	lua_setglobal(lua, "luaMoveRightFunc");
+
+	lua_pushcfunction(lua, luaMoveUpFunc);
+	lua_setglobal(lua, "luaMoveUpFunc");
+
+	lua_pushcfunction(lua, luaMoveDownFunc);
+	lua_setglobal(lua, "luaMoveDownFunc");
+
+	lua_pushcfunction(lua, getPaneState);
+	lua_setglobal(lua, "getPaneState");
+	
+	lua_pushcfunction(lua, moveAble);
+	lua_setglobal(lua, "moveAble");
+
+	luaL_dofile(lua, "test.lua"); 
+	CDialog::OnRButtonDown(nFlags, point);
 }
